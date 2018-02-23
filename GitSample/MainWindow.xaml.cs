@@ -23,6 +23,7 @@ namespace GitSample
         public MainWindow()
         {
             InitializeComponent();
+            // hogehoge
         }
     }
 }
