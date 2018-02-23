@@ -24,6 +24,7 @@ namespace GitSample
         {
             InitializeComponent();
             // hogehoge
+            // fugafuga
         }
     }
 }
