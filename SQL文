@@ -1,0 +1,134 @@
+/**
+ * セッションの日付一覧を取得
+ */
+- (NSArray*)getSessionDate {
+    NSMutableArray *array = [NSMutableArray array];
+    
+    NSString *query =
+    @"select * from ("
+    "select strftime('%Y-%m-%d', datetime(start_time/1000, 'unixepoch', '+9 hours')) as start_time "
+    "from session"
+    ") "
+    "group by start_time "
+    "order by start_time asc;";
+    
+    FMResultSet *result = [_acquiredFromServerDB executeQuery:query];
+    
+    DEBUGLOG(@"query: %@", result.query);
+    
+    while ([result next])
+    {
+        NSString *date = [result stringForColumn:@"start_time"];
+        DEBUGLOG(@"sessionDate start_time = %@", date);
+        [array addObject:date];
+    }
+    
+    [result close];
+    
+    return array;
+}
+
+
+/**
+ * 該当の日付に開催されるセッションのリストを取得
+ */
+- (NSArray*)getSessionInformationOfDate:(NSString*)date {
+    NSMutableArray *sessionObjects = [NSMutableArray array];
+    
+    NSString *format = @"select s1.id, s1.code, s1.title, datetime(s1.start_time/1000, 'unixepoch', '+9 hours') as start_time, datetime(s1.end_time/1000, 'unixepoch', '+9 hours') as end_time, s2.places, s3.speakers "
+    "from session s1 "
+    "join ( "
+          "select t1.id, group_concat(t3.name, ', ') as places "
+          "from session t1 "
+          "join assigned_session_place t2 "
+          "on t1.id = t2.session_id "
+          "join session_place t3 "
+          "on t2.place_id = t3.id "
+          "group by t1.id "
+          ") s2 "
+    "on s1.id = s2.id "
+    "join ( "
+          "select u1.id as id, group_concat(u2.organization || ' / ' || u2.name, ', ') as speakers "
+          "from  session u1 "
+          "join session_speaker u2 "
+          "on u1.id = u2.session_id "
+          "group by u1.id "
+          ") s3 "
+    "on s1.id = s3.id "
+    "where strftime('%%Y-%%m-%%d', datetime(s1.start_time/1000, 'unixepoch', '+9 hours')) = '%@' "
+    ";";
+    NSString* query = [NSString stringWithFormat:format, date];
+    FMResultSet *result = [_acquiredFromServerDB executeQuery:query];
+    
+    DEBUGLOG(@"query: %@", result.query);
+    
+    while ([result next])
+    {
+        SessionObject *sessionObject = [[SessionObject alloc] init];
+        sessionObject.sessionId = [result stringForColumn:@"id"];
+        sessionObject.code = [result stringForColumn:@"code"];
+        sessionObject.title = [result stringForColumn:@"title"];
+        sessionObject.startTime = [Utility getTimeForSession:[result stringForColumn:@"start_time"]];
+        sessionObject.endTime = [Utility getTimeForSession:[result stringForColumn:@"end_time"]];
+        sessionObject.places = [result stringForColumn:@"places"];
+        sessionObject.speakers = [result stringForColumn:@"speakers"];
+        DEBUGLOG(@"%@ result id = %@, code = %@, title = %@, start_time = %@, end_time = %@, places = %@, speakers = %@", result.query, sessionObject.sessionId, sessionObject.code, sessionObject.title, sessionObject.startTime, sessionObject.endTime, sessionObject.places, sessionObject.speakers);
+        [sessionObjects addObject:sessionObject];
+    }
+    
+    [result close];
+    
+    return sessionObjects;
+}
+
+
+/**
+ * ユーザ毎のセッション情報を取得
+ */
+- (NSArray*)getUserSessionInformation:(NSString*)publicKey {
+    NSMutableArray *userSessionArray = [NSMutableArray array];
+    
+    NSString *format = @"select s.id as id, s.code as code, s.title as title, s.description as description, strftime('%%m/%%d', datetime(s.start_time/1000, 'unixepoch', '+9 hours')) "
+    "as display_date, strftime('%%H:%%M', datetime(s.start_time/1000, 'unixepoch', '+9 hours')) || '~' ||strftime('%%H:%    %M', datetime(s.end_time/1000, 'unixepoch', '+9 hours')) as display_term, "
+    "datetime(s.start_time/1000, 'unixepoch', '+9 hours') as start_time, datetime(s.end_time/1000, 'unixepoch', '+9 hours') as end_time , p.name as room_name "
+    "from session s "
+    "join ( "
+          "select * from ( "
+                         "select * from session_registration "
+                         "where visitor_id in ( "
+                                              "select id from visitor "
+                                              "where public_key = '%@' "
+                                              ") "
+                         ") "
+          ") t "
+    "on s.id = t.session_id "
+    "join ( "
+          "select session_id, group_concat(session_place.name, ', ') as name "
+          "from assigned_session_place "
+          "join session_place "
+          "on assigned_session_place.place_id = session_place.id "
+          "group by session_id "
+          ") p "
+    "on s.id = p.session_id "
+    ";";
+    
+    NSString* query = [NSString stringWithFormat:format, publicKey];
+    FMResultSet *result = [_acquiredFromServerDB executeQuery:query];
+    
+    DEBUGLOG(@"query: %@", result.query);
+    
+    while ([result next])
+    {
+        SessionUserObject *sessionUserObject = [[SessionUserObject alloc] init];
+        sessionUserObject.sessionId = [result stringForColumn:@"id"];
+        sessionUserObject.displayDate = [result stringForColumn:@"display_date"];
+        sessionUserObject.roomName = [result stringForColumn:@"room_name"];
+        sessionUserObject.displayTerm = [result stringForColumn:@"display_term"];
+        sessionUserObject.title = [result stringForColumn:@"title"];
+        [userSessionArray addObject:sessionUserObject];
+    }
+    
+    [result close];
+    
+    return userSessionArray;
+}
